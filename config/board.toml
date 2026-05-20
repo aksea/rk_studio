@@ -1,56 +1,29 @@
-[rtsp]
-mounts = ["cam"]
-codec = "h265"
-bitrate = 1200000
-width = 480
-height = 272
-
-[zenoh]
-mode = "client"
-server_ip = "172.20.10.5"
-server_port = 7447
-connect = []
-listen = []
-key_prefix = "rk_studio"
-
-[entity]
-entity_id = "helmet_001"
-display_name = "张三的头盔"
-owner = "operator_01"
-device_type = "helmet"
-provides_channels = "video_out,mediapipe"
-video_stream_url = "rtsp://172.20.10.3:8554/cam"
-
-[yolo]
-model = "../models/yolo11n_rk3588_int8.rknn"
-fps = 5
-confidence_threshold = 0.25
-nms_threshold = 0.45
-max_detections = 50
-
 [audio.mic0]
 device = "hw:rockchipes8388,0"
 
+[audio.usb0]
+device = "plughw:CARD=Audio,DEV=0"
+
 [camera.cam0]
-record_device = "/dev/video55"
+record_device = "/dev/video44"
 preview_width = 640
 preview_height = 360
 fps = 20
 
 [camera.cam1]
-record_device = "/dev/video64"
+record_device = "/dev/video53"
 preview_width = 640
 preview_height = 360
 fps = 20
 
 [camera.cam2]
-record_device = "/dev/video73"
+record_device = "/dev/video62"
 preview_width = 640
 preview_height = 360
 fps = 20
 
-[camera.cam3]
-record_device = "/dev/video82"
+[camera.cam4]
+record_device = "/dev/video71"
 preview_width = 640
 preview_height = 360
 fps = 20

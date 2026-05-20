@@ -23,17 +23,10 @@ class MainWindow : public QMainWindow {
   void LoadConfigFiles();
   void TogglePreview();
   void ToggleRecording();
-  void ToggleRtsp();
-  void ToggleResultPublishing();
-  void ToggleEntityRegistration();
-  void ToggleMediapipe();
-  void ToggleYolo();
   void OnStateChanged(rkstudio::AppState state);
   void OnTelemetryObserved(rkstudio::TelemetryEvent event);
   void OnPreviewFailure(QString camera_id, QString reason, bool fatal);
   void OnTileRebound(QString camera_id, WId window_id);
-  void OnMediapipeResult(rkstudio::vision::MediapipeResult result);
-  void OnYoloResult(rkstudio::vision::YoloResult result);
 
  private:
   void BuildUi();
@@ -51,11 +44,6 @@ class MainWindow : public QMainWindow {
   QLabel* summary_label_ = nullptr;
   QPushButton* preview_button_ = nullptr;
   QPushButton* record_button_ = nullptr;
-  QPushButton* rtsp_button_ = nullptr;
-  QPushButton* entity_registry_button_ = nullptr;
-  QPushButton* result_publish_button_ = nullptr;
-  QPushButton* mediapipe_toggle_button_ = nullptr;
-  QPushButton* yolo_toggle_button_ = nullptr;
   QPlainTextEdit* log_view_ = nullptr;
   std::map<QString, PreviewTileWidget*> tiles_;
   int telemetry_ok_skip_counter_ = 0;

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -11,7 +10,6 @@ enum class AppState {
   kIdle,
   kPreviewing,
   kRecording,
-  kStreaming,
   kError,
 };
 
@@ -35,56 +33,10 @@ struct AudioSource {
   int channels = 2;
 };
 
-struct MediapipeHardwareConfig {
-  std::string detector_model;   // resolved at runtime if empty
-  std::string landmark_model;   // resolved at runtime if empty
-};
-
-struct YoloHardwareConfig {
-  std::string model;             // resolved at runtime if empty
-  std::vector<std::string> class_names;
-  int fps = 5;
-  double confidence_threshold = 0.25;
-  double nms_threshold = 0.45;
-  int max_detections = 50;
-};
-
-struct RtspConfig {
-  int port = 8554;
-  std::string codec = "h265";
-  int bitrate = 1'800'000;
-  int width = 480;
-  int height = 272;
-  std::vector<std::string> mounts{"cam0", "cam1", "cam2", "cam3"};
-};
-
-struct ZenohConfig {
-  std::string mode = "peer";
-  std::string server_ip;
-  int server_port = 7447;
-  std::vector<std::string> connect;
-  std::vector<std::string> listen;
-  std::string key_prefix = "rk_studio";
-};
-
-struct EntityRegistrationConfig {
-  std::string entity_id = "helmet_001";
-  std::string display_name = "张三的头盔";
-  std::string owner = "operator_01";
-  std::string device_type = "helmet";
-  std::string provides_channels = "video_out,mediapipe";
-  std::string video_stream_url = "rtsp://172.20.10.3:8554/cam";
-};
-
 struct BoardConfig {
   std::vector<CameraNodeSet> cameras;
   std::vector<AudioSource> audio_sources;
   std::vector<std::string> sink_priority{"ximagesink", "glimagesink"};
-  std::optional<MediapipeHardwareConfig> mediapipe;
-  std::optional<YoloHardwareConfig> yolo;
-  std::optional<RtspConfig> rtsp;
-  std::optional<ZenohConfig> zenoh;
-  EntityRegistrationConfig entity_registration;
 };
 
 struct SessionProfile {
@@ -93,8 +45,6 @@ struct SessionProfile {
   std::string output_dir = "./records";
   std::string prefix = "session";
   std::string audio_source = "mic0";
-  std::string selected_mediapipe_camera;
-  std::string selected_yolo_camera;
   int preview_rows = 2;
   int preview_cols = 2;
   int gop = 30;
@@ -113,6 +63,6 @@ struct TelemetryEvent {
 
 const CameraNodeSet* FindCamera(const BoardConfig& config, const std::string& id);
 const AudioSource* FindAudioSource(const BoardConfig& config, const std::string& id);
-std::vector<std::string> UnionCameraIds(const SessionProfile& profile);
+std::vector<std::string> EffectiveRecordCameraIds(const SessionProfile& profile);
 
 }  // namespace rkstudio

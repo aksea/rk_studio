@@ -115,17 +115,6 @@ bool MediaEngine::StartRecording(std::string* err) {
   return true;
 }
 
-bool MediaEngine::StartRtsp(std::string* err) {
-  StopPipelines();
-
-  rtsp_server_ = std::make_unique<RtspServer>();
-  if (!rtsp_server_->Start(board_config_, session_profile_, err)) {
-    rtsp_server_.reset();
-    return false;
-  }
-  return true;
-}
-
 void MediaEngine::StopPreview() {
   StopPipelines();
 }
@@ -134,43 +123,11 @@ void MediaEngine::StopRecording(bool ok) {
   FinalizeRecording(ok);
 }
 
-void MediaEngine::StopRtsp() {
-  if (rtsp_server_) {
-    rtsp_server_->Stop();
-    rtsp_server_.reset();
-  }
-}
-
 void MediaEngine::StopAll() {
-  StopRtsp();
   if (session_writer_) {
     FinalizeRecording(true);
   }
   StopPipelines();
-}
-
-void MediaEngine::UpdateMediapipeResult(const vision::MediapipeResult& result) {
-  if (rtsp_server_) {
-    rtsp_server_->UpdateMediapipeResult(result);
-  }
-}
-
-void MediaEngine::UpdateYoloResult(const vision::YoloResult& result) {
-  if (rtsp_server_) {
-    rtsp_server_->UpdateYoloResult(result);
-  }
-}
-
-void MediaEngine::ClearMediapipeResult(const std::string& camera_id) {
-  if (rtsp_server_) {
-    rtsp_server_->ClearMediapipeResult(camera_id);
-  }
-}
-
-void MediaEngine::ClearYoloResult(const std::string& camera_id) {
-  if (rtsp_server_) {
-    rtsp_server_->ClearYoloResult(camera_id);
-  }
 }
 
 void MediaEngine::BindPreviewWindow(const std::string& camera_id, WId window_id) {
@@ -223,7 +180,7 @@ std::unique_ptr<V4l2Pipeline> MediaEngine::BuildOnePipeline(
   options.preview.enabled = !recording
                              && preview_window_ids_.count(camera_id) > 0
                              && Contains(session_profile_.preview_cameras, camera_id);
-  options.record.enabled = recording && Contains(session_profile_.record_cameras, camera_id);
+  options.record.enabled = recording && Contains(EffectiveRecordCameraIds(session_profile_), camera_id);
   options.record.gop = session_profile_.gop;
 
   if (!pipeline->Build(
@@ -245,7 +202,7 @@ bool MediaEngine::RebuildPipelines(bool recording, std::string* err) {
   StopPipelines();
 
   const std::vector<std::string> camera_ids =
-      recording ? UnionCameraIds(session_profile_) : session_profile_.preview_cameras;
+      recording ? EffectiveRecordCameraIds(session_profile_) : session_profile_.preview_cameras;
   for (const auto& camera_id : camera_ids) {
     auto pipeline = BuildOnePipeline(camera_id, recording, err);
     if (!pipeline || !pipeline->Start(err)) {
@@ -272,7 +229,7 @@ void MediaEngine::EmitTelemetry(const TelemetryEvent& event) {
 
     const bool record_sync_event =
         event.category == "audio" ||
-        (event.category == "media" && Contains(session_profile_.record_cameras, event.stream_id) &&
+        (event.category == "media" && Contains(EffectiveRecordCameraIds(session_profile_), event.stream_id) &&
          (event.stage == "capture" || event.stage == "queue"));
     if (record_sync_event) {
       session_writer_->RecordSyncEvent(event);

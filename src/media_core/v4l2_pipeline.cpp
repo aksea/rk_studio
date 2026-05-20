@@ -216,7 +216,7 @@ bool V4l2Pipeline::BuildPipeline(std::string* err) {
       if (err) *err = "failed to link record chain for " + options_.source.id;
       return false;
     }
-    GstPad* mux_pad = gst_element_request_pad_simple(mux_, "video_%u");
+    GstPad* mux_pad = gst_element_get_request_pad(mux_, "video_%u");
     GstPad* parser_src = gst_element_get_static_pad(parser_, "src");
     const bool mux_ok = mux_pad && parser_src && gst_pad_link(parser_src, mux_pad) == GST_PAD_LINK_OK;
     if (parser_src) gst_object_unref(parser_src);
