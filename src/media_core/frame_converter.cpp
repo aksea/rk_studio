@@ -43,11 +43,17 @@ std::shared_ptr<void> HoldSampleRef(GstSample* sample) {
   });
 }
 
+struct Nv12FrameHolder {
+  std::shared_ptr<void> sample_ref;
+  std::shared_ptr<cv::Mat> data;
+};
+
 }  // namespace
 
 std::optional<vision::FrameRef> FrameConverter::ExtractNv12Frame(
     GstSample* sample,
-    const std::string& camera_id) const {
+    const std::string& camera_id,
+    bool copy_dmabuf) const {
   if (sample == nullptr || camera_id.empty()) {
     return std::nullopt;
   }
@@ -82,13 +88,17 @@ std::optional<vision::FrameRef> FrameConverter::ExtractNv12Frame(
   frame.pixel_format = vision::PixelFormat::kNv12;
   frame.bytes_used = gst_buffer_get_size(buffer);
   frame.dmabuf_fd = ExtractDmabufFd(buffer);
-  if (frame.dmabuf_fd >= 0) {
+  if (frame.dmabuf_fd >= 0 && !copy_dmabuf) {
     frame.owned_data = HoldSampleRef(sample);
     return frame;
   }
 
   GstVideoFrame video_frame;
   if (!gst_video_frame_map(&video_frame, &info, buffer, GST_MAP_READ)) {
+    if (frame.dmabuf_fd >= 0) {
+      frame.owned_data = HoldSampleRef(sample);
+      return frame;
+    }
     return std::nullopt;
   }
 
@@ -99,6 +109,10 @@ std::optional<vision::FrameRef> FrameConverter::ExtractNv12Frame(
   const int src_uv_stride = GST_VIDEO_FRAME_PLANE_STRIDE(&video_frame, 1);
   if (src_y == nullptr || src_uv == nullptr || src_y_stride <= 0 || src_uv_stride <= 0) {
     gst_video_frame_unmap(&video_frame);
+    if (frame.dmabuf_fd >= 0) {
+      frame.owned_data = HoldSampleRef(sample);
+      return frame;
+    }
     return std::nullopt;
   }
   for (int y = 0; y < h; ++y) {
@@ -116,7 +130,14 @@ std::optional<vision::FrameRef> FrameConverter::ExtractNv12Frame(
   frame.stride = static_cast<int>(nv12_holder->step[0]);
   frame.mapped_ptr = nv12_holder->data;
   frame.bytes_used = nv12_holder->total() * nv12_holder->elemSize();
-  frame.owned_data = nv12_holder;
+  if (frame.dmabuf_fd >= 0) {
+    auto holder = std::make_shared<Nv12FrameHolder>();
+    holder->sample_ref = HoldSampleRef(sample);
+    holder->data = nv12_holder;
+    frame.owned_data = holder;
+  } else {
+    frame.owned_data = nv12_holder;
+  }
   return frame;
 }
 

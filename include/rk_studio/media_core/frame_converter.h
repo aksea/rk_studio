@@ -14,7 +14,8 @@ class FrameConverter {
  public:
   std::optional<vision::FrameRef> ExtractNv12Frame(
       GstSample* sample,
-      const std::string& camera_id) const;
+      const std::string& camera_id,
+      bool copy_dmabuf = false) const;
 
   std::optional<vision::FrameRef> ConvertToRgbFrame(
       GstSample* sample,

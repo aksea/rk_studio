@@ -746,7 +746,7 @@ void VisionEngine::OnYoloSample(GstSample* sample) {
     raw_frame = RotateRgbFrame(std::move(raw_frame), orientation);
     raw_frame = RgbFrameToBgr(std::move(raw_frame));
   } else {
-    raw_frame = frame_converter_.ExtractNv12Frame(sample, camera_id);
+    raw_frame = frame_converter_.ExtractNv12Frame(sample, camera_id, true);
   }
   if (!raw_frame.has_value()) {
     return;
