@@ -193,6 +193,8 @@ audio_source = ""
 
 `record_cameras` 留空时录制全部预览摄像头；如果只想录部分摄像头，可以填入摄像头 id。`audio_source` 留空表示不录音。
 
+程序启动时会自动加载默认的 `config/board.toml` 和 `config/profile.toml`。修改配置后重启程序生效。
+
 ## 使用规则
 
 - `启动预览`：显示配置里的多路预览画面。

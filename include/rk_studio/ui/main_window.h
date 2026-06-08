@@ -20,7 +20,6 @@ class MainWindow : public QMainWindow {
   ~MainWindow() override;
 
  private slots:
-  void LoadConfigFiles();
   void TogglePreview();
   void ToggleRecording();
   void OnStateChanged(rkstudio::AppState state);
@@ -30,6 +29,7 @@ class MainWindow : public QMainWindow {
 
  private:
   void BuildUi();
+  void LoadConfigFiles();
   void RebuildTiles();
   void SetStatus(const QString& text);
   void AppendLog(const QString& line);

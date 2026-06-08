@@ -88,7 +88,6 @@ void MainWindow::BuildUi() {
   auto* side_layout = new QVBoxLayout(side_panel);
   side_layout->setSpacing(12);
 
-  auto* load_button = new QPushButton(QStringLiteral("加载配置"), side_panel);
   preview_button_ = new QPushButton(QStringLiteral("启动预览"), side_panel);
   record_button_ = new QPushButton(QStringLiteral("启动录制"), side_panel);
   record_button_->setEnabled(false);
@@ -100,7 +99,6 @@ void MainWindow::BuildUi() {
   log_view_->setReadOnly(true);
   log_view_->setMaximumBlockCount(1000);
 
-  side_layout->addWidget(load_button);
   side_layout->addWidget(preview_button_);
   side_layout->addWidget(record_button_);
   side_layout->addWidget(state_label_);
@@ -111,7 +109,6 @@ void MainWindow::BuildUi() {
   root->addWidget(side_panel);
   root->addWidget(grid_container_, 1);
 
-  connect(load_button, &QPushButton::clicked, this, &MainWindow::LoadConfigFiles);
   connect(preview_button_, &QPushButton::clicked, this, &MainWindow::TogglePreview);
   connect(record_button_, &QPushButton::clicked, this, &MainWindow::ToggleRecording);
 }
