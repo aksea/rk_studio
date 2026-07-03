@@ -37,6 +37,9 @@ class HandTracker {
                                    const RoiRect& roi,
                                    float* area_ratio,
                                    float* tip_ratio);
+  float MinLandmarkSpan(int frame_w, int frame_h) const;
+  static float LandmarkBBoxSide(const std::vector<cv::Point2f>& landmarks_xy);
+  static float RoiSide(const RoiRect& roi);
   std::optional<RoiRect> UpdateTrackRoi(const std::vector<cv::Point2f>& landmarks_xy,
                                         int frame_w,
                                         int frame_h) const;

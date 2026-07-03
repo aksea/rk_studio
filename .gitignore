@@ -11,3 +11,4 @@ config/profile.toml
 *.swp
 *~
 .DS_Store
+tmp/

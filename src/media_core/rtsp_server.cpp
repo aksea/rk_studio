@@ -260,11 +260,7 @@ void DrawMediapipeOverlay(cv::Mat& rgb, const vision::MediapipeResult& result) {
       if (roi.width > 0 && roi.height > 0) {
         cv::rectangle(rgb, roi, roi_color, 2, cv::LINE_AA);
         if (!hand.gesture.empty()) {
-          std::ostringstream label;
-          label.setf(std::ios::fixed);
-          label.precision(2);
-          label << hand.gesture << " " << hand.gesture_score;
-          DrawLabel(rgb, label.str(), roi.tl(), roi_color);
+          DrawLabel(rgb, hand.gesture, roi.tl(), roi_color);
         }
       }
     }

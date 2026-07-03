@@ -23,13 +23,22 @@
 namespace rkstudio::vision {
 namespace {
 
-constexpr int kMaxHands = 2;
+constexpr int kMaxHands = 1;
 
 std::vector<cv::Point2f> ExtractLandmarkPoints(const mediapipe_demo::HandLandmarks& landmarks) {
   std::vector<cv::Point2f> points;
   points.reserve(landmarks.points.size());
   for (const auto& point : landmarks.points) {
     points.emplace_back(point.x, point.y);
+  }
+  return points;
+}
+
+std::vector<cv::Point3f> ExtractLandmarkPoints3D(const mediapipe_demo::HandLandmarks& landmarks) {
+  std::vector<cv::Point3f> points;
+  points.reserve(landmarks.points.size());
+  for (const auto& point : landmarks.points) {
+    points.push_back(point);
   }
   return points;
 }
@@ -123,10 +132,16 @@ struct GestureRecognition {
   float score = 0.0f;
 };
 
-GestureRecognition RecognizeHandGesture(const std::vector<cv::Point2f>& points) {
+GestureRecognition RecognizeHandGesture(const std::vector<cv::Point3f>& points3d) {
   GestureRecognition result;
-  if (points.size() < 21) {
+  if (points3d.size() < 21) {
     return result;
+  }
+
+  std::vector<cv::Point2f> points;
+  points.reserve(points3d.size());
+  for (const auto& point : points3d) {
+    points.emplace_back(point.x, point.y);
   }
 
   const cv::Point2f wrist = points[0];
@@ -149,9 +164,11 @@ GestureRecognition RecognizeHandGesture(const std::vector<cv::Point2f>& points) 
       {{17, 18, 20}},
   }};
 
-  int folded_count = 0;
-  int extended_count = 0;
-  for (const auto& finger : kFingers) {
+  std::array<bool, 4> finger_extended{};
+  std::array<bool, 4> finger_folded{};
+  std::array<bool, 4> finger_strict_folded{};
+  for (size_t i = 0; i < kFingers.size(); ++i) {
+    const auto& finger = kFingers[i];
     const int mcp = finger[0];
     const int pip = finger[1];
     const int tip = finger[2];
@@ -162,37 +179,89 @@ GestureRecognition RecognizeHandGesture(const std::vector<cv::Point2f>& points) 
     const bool folded_by_axis = tip_proj < pip_proj + 0.06f * palm_size;
     const bool folded_near_palm = PointDist(points[tip], palm_center) < 0.72f * palm_size ||
                                   PointDist(points[tip], points[mcp]) < 0.55f * palm_size;
-    if (extended_by_axis && extended_far_from_mcp) {
-      ++extended_count;
-    }
-    if (folded_by_axis || folded_near_palm) {
-      ++folded_count;
-    }
+    finger_extended[i] = extended_by_axis && extended_far_from_mcp;
+    finger_folded[i] = folded_by_axis || folded_near_palm;
+    finger_strict_folded[i] = folded_by_axis && folded_near_palm;
   }
 
-  const float thumb_len = PointDist(points[2], points[4]);
   const float thumb_to_palm = PointDist(points[4], palm_center);
-  const bool thumb_extended = thumb_len > 0.35f * palm_size &&
-                              thumb_to_palm > 0.55f * palm_size &&
-                              PointDist(points[4], points[8]) > 0.45f * palm_size;
-  const bool thumb_folded = thumb_to_palm < 0.70f * palm_size ||
-                            PointDist(points[4], points[5]) < 0.55f * palm_size ||
-                            PointDist(points[4], points[9]) < 0.62f * palm_size;
+  const float thumb_to_index_mcp = PointDist(points[4], points[5]);
+  const float thumb_to_middle_mcp = PointDist(points[4], points[9]);
+  const bool thumb_folded = thumb_to_palm < 0.60f * palm_size &&
+                            thumb_to_index_mcp < 0.46f * palm_size &&
+                            thumb_to_middle_mcp < 0.52f * palm_size;
 
-  if (extended_count == 4 && thumb_extended) {
-    const float tip_spread = PointDist(points[8], points[20]);
-    if (tip_spread > 1.05f * palm_width) {
-      result.gesture = "open_palm";
-      result.score = std::clamp(0.58f + 0.08f * static_cast<float>(extended_count) +
-                                    std::min(0.10f, (tip_spread - palm_width) / palm_size),
-                                0.0f, 1.0f);
-      return result;
-    }
+  const bool index_extended = finger_extended[0];
+  const bool middle_extended = finger_extended[1];
+  const bool ring_extended = finger_extended[2];
+  const bool pinky_extended = finger_extended[3];
+  const int extended_count = static_cast<int>(index_extended) +
+                             static_cast<int>(middle_extended) +
+                             static_cast<int>(ring_extended) +
+                             static_cast<int>(pinky_extended);
+  const int folded_count = static_cast<int>(finger_strict_folded[0]) +
+                           static_cast<int>(finger_strict_folded[1]) +
+                           static_cast<int>(finger_strict_folded[2]) +
+                           static_cast<int>(finger_strict_folded[3]);
+  const bool middle_folded = finger_strict_folded[1];
+  const bool ring_folded = finger_strict_folded[2];
+  const bool pinky_folded = finger_strict_folded[3];
+
+  const float thumb_index_gap = PointDist(points[4], points[8]);
+  const float index_extension = ProjectFromWrist(points, 8, palm_axis) - ProjectFromWrist(points, 6, palm_axis);
+  const float middle_extension = ProjectFromWrist(points, 12, palm_axis) - ProjectFromWrist(points, 10, palm_axis);
+  const float ring_extension = ProjectFromWrist(points, 16, palm_axis) - ProjectFromWrist(points, 14, palm_axis);
+  const float pinky_extension = ProjectFromWrist(points, 20, palm_axis) - ProjectFromWrist(points, 18, palm_axis);
+  const float fingertip_gap = PointDist(points[8], points[12]);
+  const bool index_isolated = index_extension > 0.18f * palm_size &&
+                              middle_extension < 0.04f * palm_size &&
+                              ring_extension < 0.04f * palm_size &&
+                              pinky_extension < 0.04f * palm_size &&
+                              fingertip_gap > 0.42f * palm_size;
+
+  const bool back_three_fingers_folded =
+      middle_folded && ring_folded && pinky_folded &&
+      middle_extension < 0.04f * palm_size &&
+      ring_extension < 0.04f * palm_size &&
+      pinky_extension < 0.04f * palm_size;
+
+  const bool back_three_fingers_extended =
+      middle_extended && ring_extended && pinky_extended &&
+      middle_extension > 0.14f * palm_size &&
+      ring_extension > 0.14f * palm_size &&
+      pinky_extension > 0.12f * palm_size;
+  const bool thumb_index_touching = thumb_index_gap < 0.30f * palm_size;
+  const bool index_curled_to_thumb = index_extension < 0.12f * palm_size ||
+                                     thumb_index_gap < 0.24f * palm_size;
+
+  if (thumb_index_touching && index_curled_to_thumb && back_three_fingers_extended) {
+    result.gesture = "ok";
+    result.score = std::clamp(0.70f +
+                                  std::min(0.16f, (0.30f * palm_size - thumb_index_gap) /
+                                                      std::max(palm_size, 1.0f)) +
+                                  std::min(0.10f, middle_extension / std::max(palm_size, 1.0f)),
+                              0.0f, 1.0f);
+    return result;
   }
 
-  if (folded_count == 4 && thumb_folded) {
-    result.gesture = "fist";
-    result.score = std::clamp(0.60f + 0.08f * static_cast<float>(folded_count), 0.0f, 1.0f);
+  if (index_extended && back_three_fingers_folded && thumb_folded && index_isolated) {
+    result.gesture = "pointing";
+    result.score = std::clamp(0.62f +
+                                  std::min(0.18f, index_extension / std::max(palm_size, 1.0f)) +
+                                  std::min(0.12f, fingertip_gap / std::max(palm_size, 1.0f)),
+                              0.0f, 1.0f);
+    return result;
+  }
+
+  if (thumb_folded && folded_count == 4) {
+    result.gesture = "up";
+    result.score = 0.86f;
+    return result;
+  }
+
+  if (thumb_folded && extended_count >= 3) {
+    result.gesture = "down";
+    result.score = 0.84f;
     return result;
   }
 
@@ -366,6 +435,12 @@ class MediapipeProcessor final : public IMediapipeProcessor {
 
     mediapipe_demo::RoiRect roi_rect = *current_roi;
     hand.roi = RoiRect{roi_rect.x1, roi_rect.y1, roi_rect.x2, roi_rect.y2};
+    if (!mediapipe_demo::IsUsableRoi(roi_rect, frame.width, frame.height)) {
+      tracker.Reset();
+      hand.tracking_mode = TrackingMode::kNoHand;
+      hand.roi.reset();
+      return hand;
+    }
 
     const cv::Rect roi_cv(roi_rect.x1, roi_rect.y1, roi_rect.x2 - roi_rect.x1,
                            roi_rect.y2 - roi_rect.y1);
@@ -448,7 +523,7 @@ class MediapipeProcessor final : public IMediapipeProcessor {
         for (const auto& point : landmarks->points) {
           hand.landmarks.push_back(Landmark3f{point.x, point.y, point.z});
         }
-        const GestureRecognition gesture = RecognizeHandGesture(global_points);
+        const GestureRecognition gesture = RecognizeHandGesture(ExtractLandmarkPoints3D(*landmarks));
         hand.gesture = gesture.gesture;
         hand.gesture_score = gesture.score;
         hand.motion_norm = motion_norm;
@@ -503,15 +578,20 @@ class MediapipeProcessor final : public IMediapipeProcessor {
         detections = detector_.InferMulti(det_input, det_meta, pipeline_config_.detector_score_threshold, kMaxHands);
       }
 
+      std::vector<mediapipe_demo::PalmDetection> valid_detections;
+      std::vector<mediapipe_demo::RoiRect> valid_det_rois;
+      valid_detections.reserve(detections.size());
+      valid_det_rois.reserve(detections.size());
       for (const auto& det : detections) {
         auto roi = mediapipe_demo::MakeRoiFromDetection(det.bbox, det_meta, frame.width, frame.height,
                                                          pipeline_config_.det_scale);
         if (roi.has_value()) {
-          det_rois.push_back(*roi);
-        } else {
-          det_rois.push_back({});  // placeholder
+          valid_detections.push_back(det);
+          valid_det_rois.push_back(*roi);
         }
       }
+      detections = std::move(valid_detections);
+      det_rois = std::move(valid_det_rois);
 
       // Match detections to trackers
       auto assignments = MatchDetectionsToTrackers(detections, det_rois, trackers_);

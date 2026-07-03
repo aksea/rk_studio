@@ -1,6 +1,7 @@
 #include "mediapipe/preprocess/image_ops.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <opencv2/imgproc.hpp>
 
@@ -8,7 +9,8 @@ namespace mediapipe_demo {
 
 namespace {
 
-constexpr int kMinRoiSide = 32;
+constexpr int kMinRoiSidePx = 48;
+constexpr float kMinRoiSideRatio = 0.08f;
 
 }  // namespace
 
@@ -92,7 +94,11 @@ std::optional<RoiRect> MakeRoiFromDetection(const BBox& norm_bbox,
   const float box_h = mapped.y2 - mapped.y1;
   const float cx = mapped.x1 + box_w * 0.5f;
   const float cy = mapped.y1 + box_h * 0.5f;
-  return MakeSquareRoi(cx, cy, std::max(box_w, box_h) * scale, frame_w, frame_h);
+  const float side = std::max(box_w, box_h) * scale;
+  if (side < static_cast<float>(MinUsableRoiSide(frame_w, frame_h))) {
+    return std::nullopt;
+  }
+  return MakeSquareRoi(cx, cy, side, frame_w, frame_h);
 }
 
 std::optional<RoiRect> MakeSquareRoi(float cx,
@@ -104,8 +110,9 @@ std::optional<RoiRect> MakeSquareRoi(float cx,
     return std::nullopt;
   }
 
+  const int min_side = MinUsableRoiSide(frame_w, frame_h);
   const int side_px = std::min(std::min(frame_w, frame_h),
-                               std::max(kMinRoiSide, static_cast<int>(std::round(side))));
+                               std::max(min_side, static_cast<int>(std::round(side))));
   const float half = static_cast<float>(side_px) * 0.5f;
   int x1 = static_cast<int>(std::round(cx - half));
   int y1 = static_cast<int>(std::round(cy - half));
@@ -117,10 +124,30 @@ std::optional<RoiRect> MakeSquareRoi(float cx,
   roi.y1 = y1;
   roi.x2 = std::min(frame_w, x1 + side_px);
   roi.y2 = std::min(frame_h, y1 + side_px);
-  if (roi.x2 - roi.x1 < kMinRoiSide || roi.y2 - roi.y1 < kMinRoiSide) {
+  if (!IsUsableRoi(roi, frame_w, frame_h)) {
     return std::nullopt;
   }
   return roi;
+}
+
+int MinUsableRoiSide(int frame_w, int frame_h) {
+  if (frame_w <= 1 || frame_h <= 1) {
+    return kMinRoiSidePx;
+  }
+  const int ratio_side =
+      static_cast<int>(std::round(static_cast<float>(std::min(frame_w, frame_h)) * kMinRoiSideRatio));
+  return std::max(kMinRoiSidePx, ratio_side);
+}
+
+bool IsUsableRoi(const RoiRect& roi, int frame_w, int frame_h) {
+  if (frame_w <= 1 || frame_h <= 1) {
+    return false;
+  }
+  if (roi.x1 < 0 || roi.y1 < 0 || roi.x2 > frame_w || roi.y2 > frame_h) {
+    return false;
+  }
+  const int min_side = MinUsableRoiSide(frame_w, frame_h);
+  return roi.x2 - roi.x1 >= min_side && roi.y2 - roi.y1 >= min_side;
 }
 
 cv::Mat RotateRoi(const cv::Mat& roi, float rotation_deg, cv::Mat* inverse_affine) {
