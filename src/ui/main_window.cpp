@@ -170,10 +170,12 @@ void MainWindow::LoadConfigFiles() {
 }
 
 void MainWindow::TogglePreview() {
-  if (runtime_manager_->state() == AppState::kPreviewing) {
+  const AppState state = runtime_manager_->state();
+  if (state == AppState::kPreviewing ||
+      (state == AppState::kRecording && runtime_manager_->preview_running())) {
     runtime_manager_->StopPreview();
     RebuildTiles();
-  } else if (runtime_manager_->state() == AppState::kIdle) {
+  } else if (state == AppState::kIdle || state == AppState::kRecording) {
     std::string err;
     if (!runtime_manager_->StartPreview(&err)) {
       QMessageBox::warning(this, QStringLiteral("启动失败"), QString::fromStdString(err));
@@ -238,7 +240,7 @@ void MainWindow::OnStateChanged(rkstudio::AppState state) {
         {}, false};
     t[rkstudio::AppState::kRecording] = {
         "Recording",
-        {}, false,
+        {}, true,
         QStringLiteral("停止录制"), true};
     t[rkstudio::AppState::kError] = {
         "Error",
@@ -251,7 +253,13 @@ void MainWindow::OnStateChanged(rkstudio::AppState state) {
   if (it == kTable.end()) return;
   const auto& row = it->second;
 
-  if (!row.preview_text.isEmpty()) preview_button_->setText(row.preview_text);
+  if (state == rkstudio::AppState::kRecording) {
+    preview_button_->setText(runtime_manager_->preview_running()
+                                 ? QStringLiteral("关闭预览")
+                                 : QStringLiteral("启动预览"));
+  } else if (!row.preview_text.isEmpty()) {
+    preview_button_->setText(row.preview_text);
+  }
   preview_button_->setEnabled(row.preview_enabled);
   if (!row.record_text.isEmpty()) record_button_->setText(row.record_text);
   record_button_->setEnabled(row.record_enabled);

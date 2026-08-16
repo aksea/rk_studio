@@ -31,6 +31,7 @@ class RuntimeManager : public QObject {
   const BoardConfig& board_config() const;
   const SessionProfile& session_profile() const;
   AppState state() const { return state_; }
+  bool preview_running() const;
 
  signals:
   void StateChanged(rkstudio::AppState state);

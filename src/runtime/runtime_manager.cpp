@@ -29,6 +29,19 @@ void RuntimeManager::ApplySessionProfile(const SessionProfile& profile) {
 }
 
 bool RuntimeManager::StartPreview(std::string* err) {
+  if (state_ == AppState::kRecording) {
+    if (recording_with_preview_) {
+      return true;
+    }
+    if (!media_engine_->StartPreview(err)) {
+      return false;
+    }
+    recording_with_preview_ = true;
+    // The primary state remains Recording, but the preview controls changed.
+    emit StateChanged(state_);
+    return true;
+  }
+
   if (state_ != AppState::kIdle) {
     if (err) *err = "cannot start preview in current state";
     return false;
@@ -93,6 +106,17 @@ void RuntimeManager::StopRecording() {
 }
 
 void RuntimeManager::StopPreview() {
+  if (state_ == AppState::kRecording) {
+    if (!recording_with_preview_) {
+      return;
+    }
+    media_engine_->StopPreview();
+    recording_with_preview_ = false;
+    // The primary state remains Recording, but the preview controls changed.
+    emit StateChanged(state_);
+    return;
+  }
+
   if (state_ != AppState::kPreviewing) {
     return;
   }
@@ -116,6 +140,11 @@ const BoardConfig& RuntimeManager::board_config() const {
 
 const SessionProfile& RuntimeManager::session_profile() const {
   return media_engine_->session_profile();
+}
+
+bool RuntimeManager::preview_running() const {
+  return state_ == AppState::kPreviewing ||
+         (state_ == AppState::kRecording && recording_with_preview_);
 }
 
 void RuntimeManager::SetState(AppState state) {
