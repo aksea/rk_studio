@@ -153,7 +153,9 @@ class ResultOverlayWidget final : public QWidget {
 
         if (!hand.gesture.empty()) {
           painter.setFont(QFont(painter.font().family(), 10, QFont::DemiBold));
-          const QString label = QString::fromStdString(hand.gesture);
+          const QString label = QString("%1  %2")
+                                    .arg(QString::fromStdString(hand.gesture))
+                                    .arg(hand.gesture_score, 0, 'f', 2);
           const QRect label_rect = painter.fontMetrics().boundingRect(label).adjusted(-4, -2, 4, 2);
           QRectF label_box(normalized.left(), normalized.top() - label_rect.height(),
                            label_rect.width(), label_rect.height());
@@ -306,8 +308,8 @@ void PreviewTileWidget::UpdateVideoGeometry() {
   }
   video_w = std::max(1, video_w);
   video_h = std::max(1, video_h);
-  const int x = 0;
-  const int y = 0;
+  const int x = (size.width() - video_w) / 2;
+  const int y = (size.height() - video_h) / 2;
   const QRect video_rect(x, y, video_w, video_h);
   if (sink_host_->geometry() != video_rect) {
     sink_host_->setGeometry(video_rect);

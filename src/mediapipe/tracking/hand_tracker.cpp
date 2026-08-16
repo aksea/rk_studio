@@ -71,10 +71,6 @@ bool HandTracker::AcceptLandmarks(std::vector<cv::Point2f>* landmarks_xy,
   if (landmarks_xy == nullptr || landmarks_xy->empty()) {
     return RejectLandmarks();
   }
-  if (!IsUsableRoi(roi, frame_w, frame_h)) {
-    ResetTrackingState();
-    return false;
-  }
   if (motion_norm != nullptr) {
     *motion_norm = 0.0f;
   }
@@ -110,11 +106,6 @@ bool HandTracker::AcceptLandmarks(std::vector<cv::Point2f>* landmarks_xy,
     return RejectLandmarks();
   }
 
-  if (LandmarkBBoxSide(*landmarks_xy) < MinLandmarkSpan(frame_w, frame_h)) {
-    ResetTrackingState();
-    return false;
-  }
-
   float area_ratio = 0.0f;
   float tip_ratio = 0.0f;
   bool plausible = LandmarkPlausibility(*landmarks_xy, roi, &area_ratio, &tip_ratio);
@@ -134,18 +125,11 @@ bool HandTracker::AcceptLandmarks(std::vector<cv::Point2f>* landmarks_xy,
     *landmarks_xy = filter_.Filter(*landmarks_xy, now_s);
   }
 
-  const std::optional<RoiRect> next_roi = UpdateTrackRoi(*landmarks_xy, frame_w, frame_h);
-  if (!next_roi.has_value()) {
+  tracking_roi_ = UpdateTrackRoi(*landmarks_xy, frame_w, frame_h);
+  if (!tracking_roi_.has_value()) {
     ResetTrackingState();
     return false;
   }
-  const float prev_side = RoiSide(roi);
-  const float next_side = RoiSide(*next_roi);
-  if (prev_side > 0.0f && next_side < prev_side * config_.roi_shrink_reject_ratio) {
-    ResetTrackingState();
-    return false;
-  }
-  tracking_roi_ = next_roi;
 
   last_good_landmarks_ = *landmarks_xy;
   if (fast_motion_cooldown_ > 0) {
@@ -175,9 +159,6 @@ std::optional<RoiRect> HandTracker::UpdateTrackRoi(const std::vector<cv::Point2f
     y_max = std::max(y_max, point.y);
   }
   const float side = std::max(x_max - x_min, y_max - y_min) * config_.track_scale;
-  if (std::max(x_max - x_min, y_max - y_min) < MinLandmarkSpan(frame_w, frame_h)) {
-    return std::nullopt;
-  }
   return MakeSquareRoi((x_min + x_max) * 0.5f, (y_min + y_max) * 0.5f, side, frame_w, frame_h);
 }
 
@@ -197,34 +178,6 @@ float HandTracker::RoiIou(const RoiRect& a, const RoiRect& b) {
   const float area_b = static_cast<float>(std::max(0, b.x2 - b.x1) * std::max(0, b.y2 - b.y1));
   const float denom = area_a + area_b - inter;
   return denom > 0.0f ? inter / denom : 0.0f;
-}
-
-float HandTracker::MinLandmarkSpan(int frame_w, int frame_h) const {
-  const float ratio_span =
-      static_cast<float>(std::min(frame_w, frame_h)) * config_.min_landmark_span_ratio;
-  return std::max(static_cast<float>(config_.min_landmark_span_px), ratio_span);
-}
-
-float HandTracker::LandmarkBBoxSide(const std::vector<cv::Point2f>& landmarks_xy) {
-  if (landmarks_xy.empty()) {
-    return 0.0f;
-  }
-  float x_min = landmarks_xy.front().x;
-  float y_min = landmarks_xy.front().y;
-  float x_max = landmarks_xy.front().x;
-  float y_max = landmarks_xy.front().y;
-  for (const auto& point : landmarks_xy) {
-    x_min = std::min(x_min, point.x);
-    y_min = std::min(y_min, point.y);
-    x_max = std::max(x_max, point.x);
-    y_max = std::max(y_max, point.y);
-  }
-  return std::max(x_max - x_min, y_max - y_min);
-}
-
-float HandTracker::RoiSide(const RoiRect& roi) {
-  return static_cast<float>(std::min(std::max(0, roi.x2 - roi.x1),
-                                     std::max(0, roi.y2 - roi.y1)));
 }
 
 bool HandTracker::LandmarkPlausibility(const std::vector<cv::Point2f>& landmarks_xy,

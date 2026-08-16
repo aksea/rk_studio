@@ -23,9 +23,6 @@ struct PipelineConfig {
   float motion_high_thresh = 0.18f;
   int fast_motion_detect_frames = 6;
   bool affine_disable_on_fast_motion = true;
-  int min_landmark_span_px = 28;
-  float min_landmark_span_ratio = 0.045f;
-  float roi_shrink_reject_ratio = 0.55f;
   bool enable_display = true;
   bool enable_profiling = false;
   bool enable_parallel_landmarks = true;

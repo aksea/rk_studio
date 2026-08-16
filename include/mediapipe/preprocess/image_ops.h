@@ -31,10 +31,6 @@ std::optional<RoiRect> MakeSquareRoi(float cx,
                                      int frame_w,
                                      int frame_h);
 
-int MinUsableRoiSide(int frame_w, int frame_h);
-
-bool IsUsableRoi(const RoiRect& roi, int frame_w, int frame_h);
-
 cv::Mat RotateRoi(const cv::Mat& roi, float rotation_deg, cv::Mat* inverse_affine);
 
 std::vector<cv::Point2f> AffinePoints(const std::vector<cv::Point2f>& points,

@@ -1,8 +1,5 @@
 #include "rk_studio/media_core/frame_converter.h"
 
-#include <atomic>
-#include <cstring>
-#include <iostream>
 #include <memory>
 #include <utility>
 
@@ -11,7 +8,6 @@
 #include <gst/video/video.h>
 #include <linux/videodev2.h>
 #include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
 
 #include "mediapipe/preprocess/hw_preprocess.h"
 
@@ -43,41 +39,6 @@ std::shared_ptr<void> HoldSampleRef(GstSample* sample) {
   return std::shared_ptr<void>(ref, [](void* ptr) {
     gst_sample_unref(static_cast<GstSample*>(ptr));
   });
-}
-
-bool ConvertNv12BufferToRgbCpu(GstBuffer* buffer, const GstVideoInfo& info, cv::Mat* rgb) {
-  if (buffer == nullptr || rgb == nullptr ||
-      GST_VIDEO_INFO_FORMAT(&info) != GST_VIDEO_FORMAT_NV12) {
-    return false;
-  }
-
-  GstVideoFrame frame;
-  if (!gst_video_frame_map(&frame, const_cast<GstVideoInfo*>(&info), buffer, GST_MAP_READ)) {
-    return false;
-  }
-
-  const int width = GST_VIDEO_INFO_WIDTH(&info);
-  const int height = GST_VIDEO_INFO_HEIGHT(&info);
-  const int y_stride = GST_VIDEO_FRAME_PLANE_STRIDE(&frame, 0);
-  const int uv_stride = GST_VIDEO_FRAME_PLANE_STRIDE(&frame, 1);
-  const uint8_t* y_plane = static_cast<const uint8_t*>(GST_VIDEO_FRAME_PLANE_DATA(&frame, 0));
-  const uint8_t* uv_plane = static_cast<const uint8_t*>(GST_VIDEO_FRAME_PLANE_DATA(&frame, 1));
-  if (width <= 0 || height <= 0 || y_plane == nullptr || uv_plane == nullptr) {
-    gst_video_frame_unmap(&frame);
-    return false;
-  }
-
-  cv::Mat tight(height * 3 / 2, width, CV_8UC1);
-  for (int y = 0; y < height; ++y) {
-    std::memcpy(tight.ptr<uint8_t>(y), y_plane + static_cast<size_t>(y) * y_stride, width);
-  }
-  for (int y = 0; y < height / 2; ++y) {
-    std::memcpy(tight.ptr<uint8_t>(height + y), uv_plane + static_cast<size_t>(y) * uv_stride, width);
-  }
-  gst_video_frame_unmap(&frame);
-
-  cv::cvtColor(tight, *rgb, cv::COLOR_YUV2RGB_NV12);
-  return !rgb->empty();
 }
 
 }  // namespace
@@ -150,25 +111,14 @@ std::optional<vision::FrameRef> FrameConverter::ConvertToRgbFrame(
   const uint64_t pts_ns = GST_CLOCK_TIME_IS_VALID(GST_BUFFER_PTS(buffer))
                               ? GST_BUFFER_PTS(buffer) : 0;
 
-  if (GST_VIDEO_INFO_FORMAT(&info) != GST_VIDEO_FORMAT_NV12) {
+  cv::Mat rgb;
+  const int fd = ExtractDmabufFd(buffer);
+  if (GST_VIDEO_INFO_FORMAT(&info) != GST_VIDEO_FORMAT_NV12 ||
+      fd < 0 ||
+      !mediapipe_demo::ConvertNv12ToRgb(fd, w, h, stride, &rgb)) {
     return std::nullopt;
   }
 
-  cv::Mat rgb;
-  static std::atomic_bool disable_rga{false};
-  static std::atomic_bool logged_cpu_fallback{false};
-  const int fd = ExtractDmabufFd(buffer);
-  if (fd >= 0 && !disable_rga.load(std::memory_order_relaxed)) {
-    if (!mediapipe_demo::ConvertNv12ToRgb(fd, w, h, stride, &rgb)) {
-      disable_rga.store(true, std::memory_order_relaxed);
-      if (!logged_cpu_fallback.exchange(true, std::memory_order_relaxed)) {
-        std::cerr << "[mediapipe] RGA NV12->RGB failed; using CPU fallback\n";
-      }
-    }
-  }
-  if (rgb.empty() && !ConvertNv12BufferToRgbCpu(buffer, info, &rgb)) {
-    return std::nullopt;
-  }
   if (rgb.empty()) {
     return std::nullopt;
   }
