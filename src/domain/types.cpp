@@ -20,14 +20,8 @@ const AudioSource* FindAudioSource(const BoardConfig& config, const std::string&
   return it == config.audio_sources.end() ? nullptr : &(*it);
 }
 
-std::vector<std::string> UnionCameraIds(const SessionProfile& profile) {
-  std::vector<std::string> ids = profile.preview_cameras;
-  for (const auto& id : profile.record_cameras) {
-    if (std::find(ids.begin(), ids.end(), id) == ids.end()) {
-      ids.push_back(id);
-    }
-  }
-  return ids;
+std::vector<std::string> EffectiveRecordCameraIds(const SessionProfile& profile) {
+  return profile.record_cameras.empty() ? profile.preview_cameras : profile.record_cameras;
 }
 
 }  // namespace rkstudio

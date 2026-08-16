@@ -8,11 +8,9 @@
 #include <QtGui/qwindowdefs.h>
 
 #include "rk_studio/domain/types.h"
-#include "rk_studio/vision_core/vision_types.h"
 
 #ifndef Q_MOC_RUN
 #include "rk_studio/domain/session.h"
-#include "rk_studio/media_core/rtsp_server.h"
 #include "rk_studio/media_core/v4l2_pipeline.h"
 #endif
 
@@ -23,7 +21,6 @@ struct OutputStreamInfo;
 
 namespace rkstudio::media {
 
-class RtspServer;
 class SessionWriter;
 class V4l2Pipeline;
 
@@ -38,15 +35,10 @@ class MediaEngine : public QObject {
   void ApplySessionProfile(const SessionProfile& profile);
   bool StartPreview(std::string* err);
   bool StartRecording(std::string* err);
-  bool StartRtsp(std::string* err);
+  bool CapturePhotos(std::string* output_dir, std::string* err);
   void StopPreview();
   void StopRecording(bool ok = true);
-  void StopRtsp();
   void StopAll();
-  void UpdateMediapipeResult(const vision::MediapipeResult& result);
-  void UpdateYoloResult(const vision::YoloResult& result);
-  void ClearMediapipeResult(const std::string& camera_id);
-  void ClearYoloResult(const std::string& camera_id);
 
   void BindPreviewWindow(const std::string& camera_id, WId window_id);
   void ObserveTelemetry(const TelemetryEvent& event);
@@ -62,10 +54,12 @@ class MediaEngine : public QObject {
  private:
   using CameraMap = std::map<std::string, std::unique_ptr<V4l2Pipeline>>;
 
-  bool RebuildPipelines(bool recording, std::string* err);
+  bool RebuildPreviewPipelines(std::string* err);
+  bool RebuildRecordPipelines(std::string* err);
   std::unique_ptr<V4l2Pipeline> BuildOnePipeline(
       const std::string& camera_id, bool recording, std::string* err);
-  void StopPipelines();
+  void StopPreviewPipelines();
+  void StopRecordPipelines();
   void EmitTelemetry(const TelemetryEvent& event);
   void OnCameraError(const std::string& camera_id, const std::string& reason, bool fatal);
   void FinalizeRecording(bool ok);
@@ -74,11 +68,11 @@ class MediaEngine : public QObject {
 
   BoardConfig board_config_;
   SessionProfile session_profile_;
-  CameraMap cameras_;
+  CameraMap preview_cameras_;
+  CameraMap record_cameras_;
   std::map<std::string, WId> preview_window_ids_;
   std::unique_ptr<SessionWriter> session_writer_;
   std::unique_ptr<rkinfra::GstAudioRecorder> audio_recorder_;
-  std::unique_ptr<RtspServer> rtsp_server_;
 };
 
 }  // namespace rkstudio::media

@@ -434,11 +434,6 @@ void V4l2Pipeline::BindPreviewOverlay() {
   }
   gst_video_overlay_set_window_handle(GST_VIDEO_OVERLAY(preview_sink_),
                                       static_cast<guintptr>(options_.preview.window_id));
-  gst_video_overlay_set_render_rectangle(GST_VIDEO_OVERLAY(preview_sink_),
-                                         0,
-                                         0,
-                                         options_.source.width,
-                                         options_.source.height);
   gst_video_overlay_handle_events(GST_VIDEO_OVERLAY(preview_sink_), FALSE);
   gst_video_overlay_expose(GST_VIDEO_OVERLAY(preview_sink_));
 }

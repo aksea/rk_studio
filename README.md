@@ -1,6 +1,6 @@
-# rk_studio
+# rk_studio sample
 
-RK3588 上的 4 路摄像头预览、录制、RTSP 推流、Mediapipe 手部关键点、YOLO 目标检测和 Zenoh 结果发布应用。项目面向 LubanCat-5 V2 + IMX415，使用 Qt5、GStreamer、RKNN 和 RGA。
+RK3588 上的多路摄像头预览、录制和顺序拍照样例。核心链路包括 Qt 预览、GStreamer 采集、视频录制、四路顺序拍照、可选音频录制和会话元数据。
 
 ## 快速部署
 
@@ -38,29 +38,8 @@ ssh cat@<board-ip> 'rm -rf /home/cat/rk_studio && cd /home/cat && tar -xzf /tmp/
 ### 3. 安装依赖
 
 ```bash
-sudo apt-get install -y \
-  cmake g++ pkg-config \
-  qtbase5-dev \
-  libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-  libgstreamer-plugins-good1.0-dev libgstreamer-allocators1.0-0 \
-  libgstrtspserver-1.0-dev \
-  gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
-  libopencv-dev
-
 cd /home/cat/rk_studio
 ./scripts/install_board_deps.sh
-```
-
-`install_board_deps.sh` 会安装项目自带的：
-
-- RKNN Toolkit2 2.3.0 runtime: `third_party/rknn/runtime/aarch64/librknnrt.so`
-- zenoh-c 1.9.0 arm64 deb: `third_party/zenohc/debian/arm64/`
-
-验证：
-
-```bash
-nm -D /usr/lib/librknnrt.so | grep rknn_mem_sync
-test -f /usr/lib/cmake/zenohc/zenohcConfig.cmake
 ```
 
 ### 4. 配置、构建、运行
@@ -87,101 +66,149 @@ cam3 -> /dev/video82
 
 如果新板子 video 编号不同，只需要改 `config/board.toml` 里的 `[camera.<id>].record_device`。
 
+## 新板子部署
+
+这个 sample 分支只保留预览和录制，部署比完整版本轻很多：不需要 RKNN、模型文件、Zenoh 或 RTSP 依赖。新板子上主要确认三件事。
+
+### 1. 确认摄像头 mainpath
+
+程序当前只使用 `rkisp_mainpath`，不使用 `selfpath`。在板子上查看映射：
+
+```bash
+v4l2-ctl --list-devices
+```
+
+典型输出会像这样：
+
+```text
+rkisp_mainpath (platform:rkisp0-vir0):
+        /dev/video44
+        /dev/video45
+        ...
+
+rkisp_mainpath (platform:rkisp0-vir2):
+        /dev/video53
+        /dev/video54
+        ...
+```
+
+每组第一个节点是 mainpath。比如当前测试板接的是 `cam0, cam1, cam2, cam4`，对应配置是：
+
+```toml
+[camera.cam0]
+record_device = "/dev/video44"
+preview_device = "/dev/video45"
+
+[camera.cam1]
+record_device = "/dev/video53"
+preview_device = "/dev/video54"
+
+[camera.cam2]
+record_device = "/dev/video62"
+preview_device = "/dev/video63"
+
+[camera.cam4]
+record_device = "/dev/video71"
+preview_device = "/dev/video72"
+```
+
+如果接线口变了，优先按实际端口命名，避免 UI 和录制文件名错位。
+
+### 2. 确认音频设备
+
+查看可录音设备：
+
+```bash
+arecord -l
+arecord -L
+```
+
+USB 麦克风建议使用 `plughw:CARD=<name>,DEV=0`，比 `hw:<card>,0` 更能兼容采样率和声道转换。例如：
+
+```toml
+[audio.usb0]
+device = "plughw:CARD=Audio,DEV=0"
+```
+
+然后在 `config/profile.toml` 中启用：
+
+```toml
+audio_source = "usb0"
+```
+
+不录音时保持：
+
+```toml
+audio_source = ""
+```
+
+### 3. 做一次 smoke test
+
+构建后先跑：
+
+```bash
+cmake -S . -B build
+cmake --build build -j$(nproc)
+```
+
+再测试音频链路：
+
+```bash
+gst-launch-1.0 -q alsasrc device=plughw:CARD=Audio,DEV=0 num-buffers=50 \
+  ! audio/x-raw,format=S16LE,layout=interleaved,rate=16000,channels=2 \
+  ! fakesink
+```
+
+后续可以加一个 `scripts/probe_board.sh`，自动输出当前 mainpath/selfpath 映射、ALSA capture 设备和推荐配置，这样新板子只需要跑脚本后复制推荐的 `board.toml`。
+
 ## 配置
 
 ### board.toml
 
-常改字段：
-
 ```toml
-[rtsp]
-mounts = ["cam", "cam0", "cam1", "cam2", "cam3"]
-
-[zenoh]
-mode = "client"
-server_ip = "172.20.10.5"
-server_port = 7447
-connect = []
-listen = []
-key_prefix = "rk_studio"
-
-[entity]
-entity_id = "helmet_001"
-display_name = "张三的头盔"
-owner = "operator_01"
-device_type = "helmet"
-provides_channels = "video_out,mediapipe"
-video_stream_url = "rtsp://<board-ip>:8554/cam"
-
-[yolo]
-model = "../models/yolo11n_rk3588_int8.rknn"
-fps = 5
-confidence_threshold = 0.25
-nms_threshold = 0.45
-max_detections = 50
+[audio.mic0]
+device = "hw:rockchipes8388,0"
 
 [camera.cam0]
 record_device = "/dev/video55"
+preview_device = "/dev/video56"
 preview_width = 640
 preview_height = 360
 fps = 30
 ```
 
-RTSP mount 规则：
+摄像头字段：
 
-```text
-rtsp://<board-ip>:8554/cam   # 4 路拼接流
-rtsp://<board-ip>:8554/cam0  # cam0 单路
-rtsp://<board-ip>:8554/cam1  # cam1 单路
-rtsp://<board-ip>:8554/cam2  # cam2 单路
-rtsp://<board-ip>:8554/cam3  # cam3 单路
-```
-
-RTSP 只注册 mount，客户端第一次连接后启动对应采集链路；客户端断开时解绑 appsrc，但保留已启动的 `V4l2Pipeline`，直到停止 RTSP 服务时统一释放。RTSP 使用 `V4l2Pipeline` 采集到 appsink，再通过 appsrc 送入 RTSP 编码链路；单路直接请求 `preview_width` / `preview_height` 尺寸，H.265 会把宽高向上对齐到 16 的倍数。帧率通过 GStreamer `videorate drop-only=true` 限制。
-
-Zenoh 发布模型结果：
-
-```text
-halmet/mediapipe
-rk_studio/yolo/<camera_id>/objects
-```
-
-Mediapipe 手部结果只发布精简的 hand 对象，当前规则手势为 `fist` 和 `open_palm`。
-
-本机联调注册状态和 Mediapipe 手势结果：
-
-```bash
-python3 scripts/zenoh_dashboard.py --mode router --listen tcp/0.0.0.0:7447
-```
-
-然后打开 `http://127.0.0.1:8765/`。板子用 `[zenoh].server_ip`
-连接这台机器的 Zenoh router；这个面板同时订阅 `zho/entity/registry`
-和 `halmet/mediapipe`，用于查看实体注册/注销状态和当前识别到的手势。
+- `record_device`：V4L2 节点。
+- `preview_device`：低分辨率预览使用的 ISP selfpath 节点；未配置时兼容性回退到 `record_device`。
+- `preview_width` / `preview_height`：预览分辨率。
+- `record_width` / `record_height`：录制分辨率，未配置时默认 1920x1080。
+- `fps`：采集帧率。
+- `bitrate`：录制码率。
 
 ### profile.toml
 
 ```toml
 [session]
 preview_cameras = ["cam0", "cam1", "cam2", "cam3"]
+record_cameras = []
+output_dir = "./records"
 prefix = "rk_studio"
 audio_source = ""
-selected_mediapipe_camera = "cam0"
-selected_yolo_camera = "cam1"
 ```
 
-Mediapipe 和 YOLO 可以选择不同摄像头。两者不能使用同一个识别摄像头。
+`record_cameras` 留空时录制全部预览摄像头；如果只想录部分摄像头，可以填入摄像头 id。`audio_source` 留空表示不录音。
+
+程序启动时会自动加载默认的 `config/board.toml` 和 `config/profile.toml`。修改配置后重启程序生效。
 
 ## 使用规则
 
-- `启动预览`：显示 4 路预览画面。
-- `启动 Mediapipe`：开启手部关键点推理；如果预览已开启，在对应画面叠加结果。
-- `启动 YOLO`：开启目标检测；如果预览已开启，在对应画面叠加检测框。
-- `注册实体` / `注销实体`：按 `[zenoh]` 配置建立连接，向 `zho/entity/registry` 发布当前设备的 `ObjectRegistration` 注册或注销信息；注册后每 5 秒重复发送一次 `REG_REGISTER` 作为心跳。
-- `发送识别结果` / `停止识别结果`：至少开启一个 Mediapipe/YOLO 后才能启动，向 Zenoh 发布当前模型结果。
-- `启动录制`：录制前可以先开启 Mediapipe/YOLO、注册实体或发送识别结果；录制开始后功能组合冻结，只允许停止录制。
-- `启动 RTSP`：按 `board.toml` 的 `[rtsp].mounts` 注册推流地址。
+- `启动预览`：显示配置里的多路预览画面。
+- `启动录制`：从 Idle 或 Previewing 进入录制；已有 selfpath 预览会继续显示，mainpath 独立录制 1920x1080 视频。
+- `停止录制`：关闭录制并写入会话元数据。
+- `一键拍照`：按 `record_cameras` 的顺序逐路使用 mainpath 拍摄 1920x1080 PNG。拍摄期间请保持头盔和棋盘静止，selfpath 预览持续显示。
 
-预览、录制、RTSP 三种模式互斥，它们占用 mainpath。Mediapipe/YOLO 是独立 selfpath 推理链路，不要求先开启预览，可以和 RTSP 同时运行。实体注册只依赖 `[zenoh]` 配置；发送识别结果受模型开关约束。YOLO 只显示、记录和发布置信度大于 0.7 的目标。
+同一摄像头的 selfpath 专门用于 640x360 预览，mainpath 专门用于 1920x1080 录制和拍照，因此预览可以与其中任一操作同时工作。录制和拍照仍然互斥；拍照始终只打开一路全分辨率管线，拍完释放后才打开下一路，避免四路全分辨率 PNG 编码并发。
 
 ## 输出
 
@@ -191,43 +218,48 @@ Mediapipe 和 YOLO 可以选择不同摄像头。两者不能使用同一个识�
 records/rk_studio-YYYYMMDD-HHMMSS/
 ├── cam0.mkv
 ├── cam1.mkv
-├── mic0.mkv
+├── mic0.wav
 ├── session.meta.json
 ├── session.sync.json
-├── studio.events.jsonl
-├── mediapipe.hand.jsonl
-└── yolo.objects.jsonl
+└── studio.events.jsonl
 ```
 
-模型结果 jsonl 只保留核心字段；需要更多字段时再扩展。
+一次完整拍照输出到单独目录：
+
+```text
+records/rk_studio-photo-YYYYMMDD-HHMMSS/
+├── cam0.png
+├── cam1.png
+├── cam2.png
+├── cam4.png
+└── capture.meta.json
+```
+
+调试时可不启动界面，直接执行一次同样的顺序拍照：
+
+```bash
+cd /home/cat/rk_studio
+./build/rk_studio --capture-once
+```
 
 ## 上板测试清单
 
-接入新功能后建议按这个顺序测：
-
 1. `./build/rk_studio` 能启动并自动加载配置。
-2. 只开预览：4 路画面正常，帧率限制生效。
-3. 只开 Mediapipe：不开预览也能产生日志；开预览后只叠加关键点，不影响底层预览画面。
-4. 只开 YOLO：确认使用当前模型和 COCO 类别名。
-5. 同时开 Mediapipe + YOLO：两个摄像头分别叠加，UI 不闪烁、不抢画面。
-6. 开 Zenoh：测试面板能收到 `zho/entity/registry` 和 `halmet/mediapipe`。
-7. 开 RTSP + 模型 + Zenoh：RTSP 画面和 Zenoh 模型结果同时正常。
-8. 先开模型和 Zenoh，再开始录制：录制期间按钮状态冻结，停止后生成 jsonl。
+2. 只开预览：多路画面正常，帧率限制生效。
+3. 只开录制：生成视频文件和 `session.meta.json`。
+4. 先预览再录制：selfpath 预览不中断，mainpath 录制正常开始；停止录制后仍保持 Previewing。
+5. 预览中点击一次 `一键拍照`：预览不中断，四张图片均为 1920x1080，文件夹中同时生成 `capture.meta.json`。
 
 ## 目录
 
 ```text
 rk_studio/
 ├── config/                     # board/profile 配置模板
-├── models/                     # RKNN 模型
 ├── include/                    # 头文件
 ├── src/                        # 源码
 ├── scripts/
-│   ├── install_board_deps.sh   # 安装板端 RKNN / Zenoh runtime 依赖
-│   └── zenoh_dashboard.py      # 本机 Zenoh 注册/手势联调面板
+│   └── install_board_deps.sh   # 安装板端构建/运行依赖
 ├── third_party/
-│   ├── rknn/                   # RKNN API 和 runtime
-│   ├── zenohc/                 # zenoh-c 1.9.0 arm64 deb
 │   └── tomlplusplus/           # TOML 解析头文件
 └── CMakeLists.txt
 ```
