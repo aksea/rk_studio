@@ -1,6 +1,0 @@
-[session]
-preview_cameras = ["cam0"]
-prefix = "rk_studio"
-audio_source = ""
-selected_mediapipe_camera = "cam0"
-selected_yolo_camera = ""
